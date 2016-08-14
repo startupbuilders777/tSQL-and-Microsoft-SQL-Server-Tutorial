@@ -13,6 +13,7 @@ Created in tables, dbo.Users
 */
 use BigMachineTutorial;
 
+
 create table Users(
 
 email varchar(50) --This is a column definition with type varchar which is a character varying specification
@@ -424,6 +425,7 @@ GO
 /*******************************************************************************
    Create Tables
 ********************************************************************************/
+
 CREATE TABLE [dbo].[Album]
 (
     [AlbumId] INT NOT NULL IDENTITY,
@@ -1062,3 +1064,462 @@ from Artist inner join Album  --Because the album can have multiple ArtistId's o
 on Album.ArtistId = Artist.ArtistId;
 --You can check that the Artist Azymuth isnt there. THis is because of the inner join
 --Innerjoin restricts result set to only results that can be matched by the join expression
+
+--Our boss wants every artist represented even if they dont have albums
+--2 ways to do => use a subquery, or change the join type
+--use left join, favour the table on the left which is Artist, then it will show all records of artist, and
+--show null on any record on the right that doesnt have a join match on the left
+
+select Name, Title
+from Artist left join Album
+on Artist.ArtistId = Album.ArtistId;
+
+--right join is to favour the right side and show all the records of the right side and if there are no matching
+--leftside for the join expression then the leftside is null
+
+select Name, Title
+from Artist right join Album
+on Artist.ArtistId = Album.ArtistId;
+
+--Full Joins 
+--Wants to favour both sides, left right join,
+
+select Name, Title
+from Artist full join Album
+on Album.ArtistId = Artist.ArtistId;
+
+--Customer has CustomerId
+--Invoice has InvoiceId and CustomerId
+--In other words Invoice contains one customer so when you Customer inner join Invoice,
+--A Customer might be in multiple invoices but each invoice has one customer
+--The CustomerID will repeat but the Invoice Id wont in the table result
+
+select top 10 FirstName + ' ' + LastName as Name, Email, Country, InvoiceId, InvoiceDate, Total
+from Customer inner join Invoice 
+on Invoice.CustomerId = Customer.CustomerId
+where Country = 'Brazil' --All sales of Brazil
+--order by Total asc,  order by Total -- This will order by least to most, but we want top sale so,
+order by Total desc;
+
+--top 10 means select top 10, whenever you use top, you should also be using order by
+--If you dont do, it will orderby clustered index which is whatever clustered index you specify,
+--which it always is the primary key
+ 
+--Sequential Ordering
+--Now we need to make a customer list for both the US and Canada
+
+select FirstName + ' ' + LastName as Name, Email, Country, InvoiceId, InvoiceDate, Total
+from Customer inner join Invoice 
+on Invoice.CustomerId = Customer.CustomerId
+where Country = 'Canada' or Country = 'USA'
+order by Country, LastName desc; --First orders by Country, then orders by last name
+--We can order by ascending or descending for Country or Lastname by attaching asc or desc
+
+--Filtering By Sets
+--Boss only wants to see customers from US and Canada that have spent more than 5$ on their orders
+
+select FirstName + ' ' + LastName as Name, Email, Country, InvoiceId, InvoiceDate, Total
+from Customer inner join Invoice 
+on Invoice.CustomerId = Customer.CustomerId
+where (Country = 'Canada' or Country = 'USA') --If you ever end up wrapping something in parenthesis think about in clause
+and Total >= 5
+order by Country, LastName desc;
+
+--Or you could have written it like this:
+
+select FirstName + ' ' + LastName as Name, Email, Country, InvoiceId, InvoiceDate, Total
+from Customer inner join Invoice 
+on Invoice.CustomerId = Customer.CustomerId
+where Country IN('USA', 'CANADA') --If you ever end up wrapping something in parenthesis think about in clause
+and Total >= 5 --user NOT IN to exclude USA and Canada
+order by Country, LastName desc;
+
+select FirstName + ' ' + LastName as Name, Email, Country, InvoiceId, InvoiceDate, Total
+from Customer inner join Invoice 
+on Invoice.CustomerId = Customer.CustomerId
+where Country = 'USA'
+order by Total desc
+offset 1 rows; --offset demands an order by precedes. Off set removes the top rows in the 
+--result query. 
+
+-------------------------------------------------------------------------------------------
+-----Aggregates
+
+--Maybe youre wondering how much have we sold.
+
+select 
+SUM(Total) as AllTimesSales
+from Invoice;
+
+--What is the average price of an order
+--Aggregate functions from scanning over data
+--SUM is an aggregate function
+
+select 
+SUM(Total) as AllTimesSales,
+AVG(Total) as AvgSale, --Average price per order, averages all the results in this column,
+COUNT(Total) as SalesCount, --These are aggregate queries
+MIN(Total) as SmallestSale,--Least sales had 
+MAX(Total) as BiggestSale--Most Sale had
+from Invoice
+
+--Grouping Results
+--Rolling up sales is useful, but lets roll up on different criteria
+
+/*
+This should work logically but you have to be redundant and write group by
+
+select BillingCountry,
+SUM(Total) as AllTimeSales
+from Invoice
+
+*/
+
+select BillingCountry,
+SUM(Total) as AllTimeSales
+from Invoice--We havent told sql server how to roll up the sum, 
+group by BillingCountry; --Now we have told it how to group the sums
+--So now it can make a two table chart with one column as Country and the other as the sales
+--just know that if you have something in the select list, then 
+--it also has to appear in the group by
+
+---A simple sales query
+--We can roll up across a table as well, we just have to use an inner join
+
+select BillingCountry,
+SUM(Total) as AllTimeSales
+from Invoice
+inner join Customer on Invoice.CustomerId = Customer.CustomerId--We havent told sql server how to roll up the sum, 
+group by BillingCountry;
+
+--If you execute this, inner join wont change anything, have to specify what we see on the select list
+
+/*
+If you run this, youll get errors again because you have to group by these things
+select FirstName + ' ' + LastName, BillingCountry,
+SUM(Total) as AllTimeSales
+from Invoice
+inner join Customer on Invoice.CustomerId = Customer.CustomerId--We havent told sql server how to roll up the sum, 
+group by BillingCountry;
+*/
+
+select FirstName + ' ' + LastName as Customer, BillingCountry,
+SUM(Total) as AllTimeSales, AVG(Total) as AvgPurchase
+from Invoice
+inner join Customer on Invoice.CustomerId = Customer.CustomerId
+group by FirstName, LastName, BillingCountry --Grouping by each one of these things
+order by BillingCountry, LastName;
+
+--So now youll get what you expected from the select statement itself,
+--Since a customer is contained in an invoice, 
+--In other words Invoice contains customer so when you Customer inner join Invoice,
+--Youll get individual records for each Invoice, while customerIds will repeat in the result
+--Youll get a 4 column list with Customer in the first column, their country in the second
+--column, and what their sales total was, and how much the customer spent on average on a purchase
+--The orderby first orders by country, then by lastname, with last names starting 
+--with a goin first
+
+--When doing aggregate queries cross check to see if the information is correct
+--The total column is in invoice. Also in invoice is customerId. Total is a denormalized record.
+--Total is actually a rollup of UnitPrice and Quantity in InvoiceLine. 
+--Calculated fields liek that should never be trusted so lets boot it out of here and do something
+--different
+
+select FirstName + ' ' + LastName as Customer, BillingCountry,
+SUM(UnitPrice * Quantity) as AllTimeSales, AVG(UnitPrice * Quantity) as AvgPurchase
+from Invoice
+inner join Customer on Invoice.CustomerId = Customer.CustomerId
+inner join InvoiceLine on InvoiceLine.InvoiceId = Invoice.InvoiceId --Gives us access to unit price and quantity
+group by FirstName, LastName, BillingCountry --Grouping by each one of these things
+order by BillingCountry, LastName;
+
+--The Sales totals from both tables are the same so that is correct.
+--However the average is not. Its much less.
+--The average is thrown off because we are now dividing per invoice line item when
+--before, we were averaging per invoice
+--Look at the invoiceline table for more info and intuition, its just unit price and quantity 
+--We are not rolling it up and then averaging it
+
+
+--Our boss really likes our sales reports and has asked for another one. She just wants to see the
+--sale report for germany, united kingdom, argentina, and only sales above $40
+
+select BillingCountry,SUM(UnitPrice * Quantity) as SalesTotal
+from Invoice inner join InvoiceLine on InvoiceLine.InvoiceId = Invoice.InvoiceId
+WHERE BillingCountry In('Germany','Argentina','United Kingdom')
+--AND SUM(UnitPrice * Quantity) > 40 --Wont work cause you cant use a where statement with an aggregate
+--therefore we have to use Having clause which comes after group by
+--If youre wanting to constrain your query using simple terms like we are here
+--you can use where, and where has to come before group by 
+group by BillingCountry 
+--If you want to constrain by the results of an aggregate function like SUM then you have to use
+--having clause
+having Sum( UnitPrice* Quantity) > 40
+order by BillingCountry;
+
+--------------------------------------------------------------------------------------------
+--------Many to Many Relationships
+
+USE BigMachineTutorial;
+
+drop table UserRole;
+
+drop table Userz;
+
+create table Userz(
+
+Id integer primary key identity(1,1),
+Email varchar(255) not null unique
+);
+
+
+
+
+create table UserRole(
+UserId integer,
+RoleId integer,
+
+primary key(UserId, RoleId)
+);
+
+drop table Rolez; 
+
+create table Rolez(
+
+Id integer primary key identity(1,1),
+Name varchar(50)
+
+);
+
+insert into Userz(Email)
+values('test@test.com');
+
+
+insert into Rolez(Name)
+values('Administrator')
+
+insert into UserRole(UserId, RoleId)
+values(1,1);
+
+--Querying a Many to Many Relationship
+
+insert into Userz(Email)
+values('Rob@Rob.com');
+
+
+select Email, Name
+from Userz
+inner join UserRole on Userz.Id = UserRole.UserId 
+inner join Rolez on Rolez.Id = UserRole.RoleId
+
+--What we had to do was join the table twice making sure that we used an innerjoin
+--We dont want to see any Users who dont have a role
+--We also dont want to see any roles who dont have a user
+--This wont show all the records if you have a user without a role
+--To pull out all the records from users regardless of whether the user has a role,
+--then do a left join for both
+
+select Email, UserRole.UserId, UserRole.RoleId, Rolez.Name
+from Userz
+left join UserRole on Userz.Id = UserRole.UserId 
+left join Rolez on Rolez.Id = UserRole.RoleId
+
+--For role back to user, do a right join
+
+--We need safeguards on our tables for the many to many relationships
+--We shouldnt be able to insert data into UserRole which does not exist in the tables User or Role
+--Need a foreign key constraint between UserRole and Userz and UserRole and Rolez
+--Without this enforcment, you can enter in garbage data 
+
+
+
+drop table UserRole;
+drop table Userz;
+drop table Rolez;
+
+
+create table Userz(
+Id integer primary key identity(1,1),
+Email varchar(255) not null unique
+);
+
+
+create table Rolez(
+Id integer primary key identity(1,1),
+Name varchar(50)
+);
+
+create table UserRole(
+UserId integer references Userz(Id) on delete cascade, 
+--Keyword References creates foreign key relationship
+RoleId integer references Rolez(Id) on delete cascade,
+primary key(UserId, RoleId)
+);
+--We dont want bad data injected in UserRole table but we also dont want data stranded in UserRole
+--table when we delete it from the Userz or the Role table. To do this we do
+--on delete cascade
+
+--Cant do this anymore cause it gives error saying it conflicts with foreign key constraint
+--Insert into UserRole(UserId, RoleId) 
+--Values(18823, 12312);
+
+insert into Userz(Email)
+values('fun');
+
+insert into Rolez(Name)
+values ('poop');
+
+insert into UserRole
+values(1,1);
+
+select * from UserRole;
+
+delete from Userz; --Will delete the only record in there, causes cascade delete
+
+select * from UserRole; 
+
+--Querying a self referencing table.
+
+USE Chinook
+
+--Querying a Self-Referencing Table with a Subquery
+
+select FirstName, LastName, 
+(select FirstName + ' ' + LastName 
+from Employee bosses --We alias the Employee table and call it bosses to take out ambiguity
+--We have to alias this because then it wont know which table we are talking about when we say
+--Employee
+--We can alias without as
+where Employee.ReportsTo = bosses.EmployeeId) as boss
+from Employee;
+
+--Selects the FirstName, and LastName of an employee and then selects their boss's FirstName 
+--and LastName and displays a table with 3 columns
+
+--Andrew Adams is the company boss so his boss column will be null, while the other employees,
+--will have bosses. 
+
+--We can also do this with joins which makes it clearer
+
+select workers.FirstName, workers.LastName, 
+(bosses.FirstName + ' ' + bosses.LastName) as [Big Boss]
+--To clear ambiguity, we have to use dot notation,
+from Employee workers
+inner join Employee as bosses 
+on workers.ReportsTo = bosses.EmployeeId
+
+-- We are missing Andrew which has boss null because we are using an inner join, to fix this use
+-- a left join
+
+select workers.FirstName, workers.LastName, 
+(bosses.FirstName + ' ' + bosses.LastName) as [Big Boss]
+from Employee workers
+left join Employee as bosses 
+on workers.ReportsTo = bosses.EmployeeId
+
+
+--------------------------
+--DATABASE ESSENTIAL STRING AND DATE FUNCTIONS
+
+select * from Artist
+
+--Partial Match queries
+
+select * from Artist
+where Name LIKE 'AC%' 
+--use LIKE Keyword for partial matches and then use a wild card (equal doesnt work)
+--AC% will show all records that have 'AC' and then anything following that
+--stuff like AC/DC, Accept, Academy of St.Martin will show up in this query
+--Execution Plan shows inefficiency
+--Click Actual Execution Plan button on top to see
+--It says Clustered Index Scan(Clustered) [Artist].[PK_Artist]
+--This tells us its scanning over the primary key
+--Why is it scanning over primary key? Because it is pulling every record out
+--and then applying the partial match. This is known as a career limiting manuever
+--Especially if you have millions and millions of records
+--To fix this you can index the name, and that will help in the partial match search
+--lets create index
+
+--create index idx_artist_name on Artist(Name); --Gunna create an index from the artist name
+
+--Index is a highly efficient way of sorting data so that sql server can find it quickly
+--Now in the action plan it says Index Seek which is good (when it says scan that is bad)
+--faster, cause it queries the index then goes directly to the data we want
+
+select * from Artist
+where Name LIKE '%AC%' --This will show all results as long as they have the characters 'ac' in them
+						--somewhere
+--Check the execution plan, it says index scan(non clustered) idx_artist_name which is bad, 
+--we scanned all the rows
+--This happens because the indexer cannot optimize for terms that start with a wildcard or that
+--use a function call in the WHERE statement
+--This is a career limiting manuever
+
+select Name, SUBSTRING(Name, 1, 5) + 'poop' -- SUBSTRING(string, start_position, length)
+from Artist;
+
+--Editing String results with replace
+
+select REPLACE(Title, 'Blood', 'B***d') as CleanTitle 
+from Album where Title LIKE '%Blood%'; 
+--We dont want to go in and replace the data but we want our query to replace it in
+--the result output
+--So we are not offending ppl and we are not replacing the data in the table which is inaccurate
+
+--Fixing Bad data with Trim
+--Space gets put into data by mistake
+--You can trim using LTRIM
+
+select Name, LTRIM(Name) as fixed from Artist
+where Name LIKE '%Kiss%'
+
+--You can also update database and remove the spaces by doing this
+update Artist set Name = LTRIM(Name);
+--Updates all the rows
+
+--We can also remove all the whitespaces from the end, we do this with a bit more complexity
+--We could use RTRIM to remove it easily
+--lets use other functions to find lenght before and after and other stuff
+
+insert into Artist (Name)
+values(' POOP ');
+
+select Name, LEN(Name)
+from Artist
+where LEN(Name) <> LEN(RTRIM(Name)); 
+
+--The <> means not equal to
+--This will not return any results back beacause the LEN function will trim out the white space 
+--What you really need to use is a function called DATALENGTH whcih measures the exact length of the
+--data
+
+select Name, LEN(Name)
+from Artist
+where DATALENGTH(Name) <> DATALENGTH(RTRIM(Name));
+
+--To fix this do this:
+
+update Artist set Name = RTRIM(Name);
+
+--Slicing Dates with Date Part
+select InvoiceId, InvoiceDate, Total,
+DATEPART(quarter, InvoiceDate) as quarter,
+DATEPART(month, InvoiceDate) as month,
+DATEPART(year, InvoiceDate) as year,
+DATEPART(day, InvoiceDate) as day
+from Invoice
+order by year,month,day
+--We can manipulate dates pretty easily using DatePart function
+
+--Doing DateMath with Datediff, lets say we want to calculate difference
+--DATEDIFF(first argument is quarter, month, day, year, startDate, enddDate )
+
+
+select InvoiceId, InvoiceDate, Total,
+DATEPART(quarter, InvoiceDate) as quarter,
+DATEPART(month, InvoiceDate) as month,
+DATEPART(year, InvoiceDate) as year,
+DATEPART(day, InvoiceDate) as day,
+DATEDIFF(month, '01/01/2005', InvoiceDate) as MonthsInBusiness
+from Invoice
+order by MonthsInBusiness;
